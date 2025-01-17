@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Color Merge Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        #game-container {
+            display: grid;
+            grid-template-columns: repeat(4, 100px);
+            grid-template-rows: repeat(4, 100px);
+            gap: 10px;
+        }
+        .tile {
+            width: 100px;
+            height: 100px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 8px;
+            background-color: #d3d3d3;
+            user-select: none;
+        }
+        .red { background-color: red; color: white; }
+        .green { background-color: green; color: white; }
+        .blue { background-color: blue; color: white; }
+        .yellow { background-color: yellow; color: black; }
+        .cyan { background-color: cyan; color: black; }
+        .magenta { background-color: magenta; color: black; }
+        .white { background-color: white; color: black; }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+    <script>
+        const colors = ["red", "green", "blue"];
+        const mixColors = {
+            "red+green": "yellow",
+            "green+red": "yellow",
+            "red+blue": "magenta",
+            "blue+red": "magenta",
+            "green+blue": "cyan",
+            "blue+green": "cyan",
+        };
+        let grid = Array(4).fill().map(() => Array(4).fill(null));
+        let score = 0;
+
+        function randomColor() {
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        function spawnTile() {
+            let emptyTiles = [];
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < 4; c++) {
+                    if (!grid[r][c]) emptyTiles.push([r, c]);
+                }
+            }
+            if (emptyTiles.length > 0) {
+                const [r, c] = emptyTiles[Math.floor(Math.random() * emptyTiles.length)];
+                grid[r][c] = randomColor();
+            }
+        }
+
+        function drawGrid() {
+            const container = document.getElementById("game-container");
+            container.innerHTML = "";
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < 4; c++) {
+                    const tile = document.createElement("div");
+                    tile.classList.add("tile");
+                    if (grid[r][c]) tile.classList.add(grid[r][c]);
+                    container.appendChild(tile);
+                }
+            }
+        }
+
+        function merge(row) {
+            let newRow = row.filter(tile => tile !== null);
+            for (let i = 0; i < newRow.length - 1; i++) {
+                const pair = `${newRow[i]}+${newRow[i+1]}`;
+                if (mixColors[pair]) {
+                    newRow[i] = mixColors[pair];
+                    newRow[i+1] = null;
+                    if (newRow[i] === "white") {
+                        score += 300;
+                        newRow[i] = null;
+                    }
+                }
+            }
+            return newRow.filter(tile => tile !== null).concat(Array(4 - newRow.length).fill(null));
+        }
+
+        function moveGrid(direction) {
+            const rotated = [];
+            for (let i = 0; i < 4; i++) {
+                rotated.push([]);
+                for (let j = 0; j < 4; j++) {
+                    if (direction === "left") rotated[i].push(grid[i][j]);
+                    if (direction === "right") rotated[i].push(grid[i][3-j]);
+                    if (direction === "up") rotated[i].push(grid[j][i]);
+                    if (direction === "down") rotated[i].push(grid[3-j][i]);
+                }
+            }
+
+            for (let i = 0; i < 4; i++) {
+                const mergedRow = merge(rotated[i]);
+                for (let j = 0; j < 4; j++) {
+                    if (direction === "left") grid[i][j] = mergedRow[j];
+                    if (direction === "right") grid[i][3-j] = mergedRow[j];
+                    if (direction === "up") grid[j][i] = mergedRow[j];
+                    if (direction === "down") grid[3-j][i] = mergedRow[j];
+                }
+            }
+        }
+
+        function handleKey(e) {
+            switch (e.key) {
+                case "ArrowLeft":
+                    moveGrid("left");
+                    break;
+                case "ArrowRight":
+                    moveGrid("right");
+                    break;
+                case "ArrowUp":
+                    moveGrid("up");
+                    break;
+                case "ArrowDown":
+                    moveGrid("down");
+                    break;
+                default:
+                    return;
+            }
+            spawnTile();
+            drawGrid();
+        }
+
+        function initGame() {
+            spawnTile();
+            spawnTile();
+            drawGrid();
+            document.addEventListener("keydown", handleKey);
+        }
+
+        initGame();
+    </script>
+</body>
+</html>
