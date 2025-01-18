@@ -225,8 +225,34 @@
                 }
             }
         }
+function handleWhiteTile(row, col) {
+    const container = document.getElementById("game-container");
+    const confetti = document.createElement("div");
+    confetti.classList.add("confetti");
+    confetti.style.top = `${row * 60}px`;
+    confetti.style.left = `${col * 60}px`;
 
-        function handleWhiteTile(row, col) {
+    const scoreAnimation = document.createElement("div");
+    scoreAnimation.classList.add("score-animation");
+    scoreAnimation.textContent = "+300";
+    scoreAnimation.style.top = `${row * 60}px`;
+    scoreAnimation.style.left = `${col * 60}px`;
+
+    container.appendChild(confetti);
+    container.appendChild(scoreAnimation);
+
+    // Puanı hemen ekleyin
+    score += 300;
+    document.getElementById("score-container").textContent = `Score: ${score}`;
+    
+    setTimeout(() => {
+        confetti.remove();
+        scoreAnimation.remove();
+        grid[row][col] = null;  // Tile'ı kaldırın
+        drawGrid();  // Grid'i tekrar çizin
+    }, 1000);  // Animasyon süresi
+}
+        function handleWhiteTile2(row, col) {
             const container = document.getElementById("game-container");
             const confetti = document.createElement("div");
             confetti.classList.add("confetti");
