@@ -3,30 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>arcibi</title>
+    <title>Color Merge Game</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
+            flex-direction: column;
             height: 100vh;
             margin: 0;
             background-color: #f0f0f0;
+            overflow: hidden;
+        }
+        #score-container {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 10px;
         }
         #game-container {
             display: grid;
-            grid-template-columns: repeat(4, 100px);
-            grid-template-rows: repeat(4, 100px);
-            gap: 10px;
+            grid-template-columns: repeat(5, 60px);
+            grid-template-rows: repeat(5, 60px);
+            gap: 5px;
+            touch-action: none;
+            position: relative;
         }
         .tile {
-            width: 100px;
-            height: 100px;
+            width: 60px;
+            height: 60px;
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 24px;
+            font-size: 16px;
             font-weight: bold;
             border-radius: 8px;
             background-color: #d3d3d3;
@@ -39,12 +48,44 @@
         .cyan { background-color: cyan; color: black; }
         .magenta { background-color: magenta; color: black; }
         .white { background-color: white; color: black; }
+        .confetti {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            animation: fade-out 1s forwards;
+        }
+        @keyframes fade-out {
+            0% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+        .score-animation {
+            position: absolute;
+            font-size: 20px;
+            font-weight: bold;
+            color: black;
+            animation: move-to-score 1s forwards;
+        }
+        @keyframes move-to-score {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-100px); }
+        }
     </style>
 </head>
 <body>
+    <div id="score-container">Score: 0</div>
     <div id="game-container"></div>
     <script>
         const colors = ["red", "green", "blue"];
+        const colorLabels = {
+            "red": "R",
+            "green": "G",
+            "blue": "B",
+            "yellow": "RG",
+            "cyan": "GB",
+            "magenta": "RB",
+            "white": "RGB"
+        };
         const mixColors = {
             "red+green": "yellow",
             "green+red": "yellow",
@@ -53,7 +94,7 @@
             "green+blue": "cyan",
             "blue+green": "cyan",
         };
-        let grid = Array(4).fill().map(() => Array(4).fill(null));
+        let grid = Array(5).fill().map(() => Array(5).fill(null));
         let score = 0;
 
         function randomColor() {
@@ -62,8 +103,8 @@
 
         function spawnTile() {
             let emptyTiles = [];
-            for (let r = 0; r < 4; r++) {
-                for (let c = 0; c < 4; c++) {
+            for (let r = 0; r < 5; r++) {
+                for (let c = 0; c < 5; c++) {
                     if (!grid[r][c]) emptyTiles.push([r, c]);
                 }
             }
@@ -76,11 +117,16 @@
         function drawGrid() {
             const container = document.getElementById("game-container");
             container.innerHTML = "";
-            for (let r = 0; r < 4; r++) {
-                for (let c = 0; c < 4; c++) {
+            for (let r = 0; r < 5; r++) {
+                for (let c = 0; c < 5; c++) {
                     const tile = document.createElement("div");
                     tile.classList.add("tile");
-                    if (grid[r][c]) tile.classList.add(grid[r][c]);
+                    if (grid[r][c]) {
+                        tile.classList.add(grid[r][c]);
+                        tile.textContent = colorLabels[grid[r][c]];
+                    }
+                    tile.dataset.row = r;
+                    tile.dataset.col = c;
                     container.appendChild(tile);
                 }
             }
@@ -94,54 +140,119 @@
                     newRow[i] = mixColors[pair];
                     newRow[i+1] = null;
                     if (newRow[i] === "white") {
-                        score += 300;
+                        handleWhiteTile(i, row.indexOf(newRow[i]));
                         newRow[i] = null;
                     }
                 }
             }
-            return newRow.filter(tile => tile !== null).concat(Array(4 - newRow.length).fill(null));
+            return newRow.filter(tile => tile !== null).concat(Array(5 - newRow.length).fill(null));
         }
 
-        function moveGrid(direction) {
-            const rotated = [];
-            for (let i = 0; i < 4; i++) {
-                rotated.push([]);
-                for (let j = 0; j < 4; j++) {
-                    if (direction === "left") rotated[i].push(grid[i][j]);
-                    if (direction === "right") rotated[i].push(grid[i][3-j]);
-                    if (direction === "up") rotated[i].push(grid[j][i]);
-                    if (direction === "down") rotated[i].push(grid[3-j][i]);
-                }
+        function moveLeft() {
+            let moved = false;
+            for (let r = 0; r < 5; r++) {
+                let original = [...grid[r]];
+                grid[r] = merge(grid[r]);
+                if (original.toString() !== grid[r].toString()) moved = true;
             }
+            return moved;
+        }
 
-            for (let i = 0; i < 4; i++) {
-                const mergedRow = merge(rotated[i]);
-                for (let j = 0; j < 4; j++) {
-                    if (direction === "left") grid[i][j] = mergedRow[j];
-                    if (direction === "right") grid[i][3-j] = mergedRow[j];
-                    if (direction === "up") grid[j][i] = mergedRow[j];
-                    if (direction === "down") grid[3-j][i] = mergedRow[j];
+        function moveRight() {
+            let moved = false;
+            for (let r = 0; r < 5; r++) {
+                let original = [...grid[r]];
+                grid[r] = merge(grid[r].reverse()).reverse();
+                if (original.toString() !== grid[r].toString()) moved = true;
+            }
+            return moved;
+        }
+
+        function moveUp() {
+            let moved = false;
+            for (let c = 0; c < 5; c++) {
+                let column = [];
+                for (let r = 0; r < 5; r++) column.push(grid[r][c]);
+                let original = [...column];
+                column = merge(column);
+                for (let r = 0; r < 5; r++) grid[r][c] = column[r];
+                if (original.toString() !== column.toString()) moved = true;
+            }
+            return moved;
+        }
+
+        function moveDown() {
+            let moved = false;
+            for (let c = 0; c < 5; c++) {
+                let column = [];
+                for (let r = 0; r < 5; r++) column.push(grid[r][c]);
+                let original = [...column];
+                column = merge(column.reverse()).reverse();
+                for (let r = 0; r < 5; r++) grid[r][c] = column[r];
+                if (original.toString() !== column.toString()) moved = true;
+            }
+            return moved;
+        }
+
+        let startX, startY, endX, endY;
+
+        function handleTouchStart(e) {
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+        }
+
+        function handleTouchEnd(e) {
+            endX = e.changedTouches[0].clientX;
+            endY = e.changedTouches[0].clientY;
+            handleSwipe();
+        }
+
+        function handleSwipe() {
+            const dx = endX - startX;
+            const dy = endY - startY;
+
+            if (Math.abs(dx) > Math.abs(dy)) {
+                if (dx > 0) {
+                    if (moveRight()) afterMove();
+                } else {
+                    if (moveLeft()) afterMove();
+                }
+            } else {
+                if (dy > 0) {
+                    if (moveDown()) afterMove();
+                } else {
+                    if (moveUp()) afterMove();
                 }
             }
         }
 
-        function handleKey(e) {
-            switch (e.key) {
-                case "ArrowLeft":
-                    moveGrid("left");
-                    break;
-                case "ArrowRight":
-                    moveGrid("right");
-                    break;
-                case "ArrowUp":
-                    moveGrid("up");
-                    break;
-                case "ArrowDown":
-                    moveGrid("down");
-                    break;
-                default:
-                    return;
-            }
+        function handleWhiteTile(row, col) {
+            const container = document.getElementById("game-container");
+            const confetti = document.createElement("div");
+            confetti.classList.add("confetti");
+            confetti.style.top = `${row * 60}px`;
+            confetti.style.left = `${col * 60}px`;
+
+            const scoreAnimation = document.createElement("div");
+            scoreAnimation.classList.add("score-animation");
+            scoreAnimation.textContent = "+300";
+            scoreAnimation.style.top = `${row * 60}px`;
+            scoreAnimation.style.left = `${col * 60}px`;
+
+            container.appendChild(confetti);
+            container.appendChild(scoreAnimation);
+
+            setTimeout(() => {
+                confetti.remove();
+                scoreAnimation.remove();
+                score += 300;
+                grid[row][col] = null;
+                drawGrid();
+                document.getElementById("score-container").textContent = `Score: ${score}`;
+            }, 1000);
+        }
+
+        function afterMove() {
             spawnTile();
             drawGrid();
         }
@@ -150,7 +261,8 @@
             spawnTile();
             spawnTile();
             drawGrid();
-            document.addEventListener("keydown", handleKey);
+            document.addEventListener("touchstart", handleTouchStart);
+            document.addEventListener("touchend", handleTouchEnd);
         }
 
         initGame();
