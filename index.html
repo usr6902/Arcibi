@@ -7,6 +7,7 @@
     <style>
         body {
             font-family: Arial, sans-serif;
+            
             display: flex;
             justify-content: center;
             align-items: center;
@@ -15,6 +16,7 @@
             margin: 0;
             background-color: #f0f0f0;
             overflow: hidden;
+            position: relative;
         }
         #score-container {
             font-size: 24px;
@@ -23,11 +25,17 @@
         }
         #game-container {
             display: grid;
-            grid-template-columns: repeat(5, 60px);
-            grid-template-rows: repeat(5, 60px);
+            grid-template-columns: repeat(auto-fit, 60px);
+            grid-template-rows: repeat(auto-fit, 60px);
             gap: 5px;
+            max-width: 95vw;
+            max-height: 80vh;
             touch-action: none;
             position: relative;
+            background-color: #333;
+            padding: 10px;
+            border-radius: 10px;
+            overflow: visible;
         }
         .tile {
             width: 60px;
@@ -40,6 +48,8 @@
             border-radius: 8px;
             background-color: #d3d3d3;
             user-select: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: all 0.2s ease;
         }
         .red { background-color: red; color: white; }
         .green { background-color: green; color: white; }
@@ -49,26 +59,67 @@
         .magenta { background-color: magenta; color: black; }
         .white { background-color: white; color: black; }
         .confetti {
-            position: absolute;
-            width: 100%;
-            height: 100%;
+            position: fixed;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #FFD700;
+            transform-origin: center;
+            animation: confetti-explosion 0.5s ease-out forwards;
             pointer-events: none;
-            animation: fade-out 1s forwards;
+            z-index: 9999;
         }
-        @keyframes fade-out {
-            0% { opacity: 1; }
-            100% { opacity: 0; }
+        @keyframes confetti-explosion {
+            0% {
+                transform: scale(1) rotate(0deg);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(20) rotate(180deg);
+                opacity: 0;
+            }
+        }
+        .tile.explode {
+            animation: tile-explosion 1s ease-out forwards;
+            z-index: 9999;
+        }
+        @keyframes tile-explosion {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(2);
+                opacity: 0.5;
+            }
+            100% {
+                transform: scale(3);
+                opacity: 0;
+            }
         }
         .score-animation {
-            position: absolute;
-            font-size: 20px;
+            position: fixed;
+            font-size: 24px;
             font-weight: bold;
-            color: black;
-            animation: move-to-score 1s forwards;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            animation: score-move 1s ease-out forwards;
+            pointer-events: none;
+            z-index: 9999;
         }
-        @keyframes move-to-score {
-            0% { transform: translateY(0); }
-            100% { transform: translateY(-100px); }
+        @keyframes score-move {
+            0% {
+                transform: translate(0, 0) scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: translate(0, -50px) scale(1.5);
+                opacity: 1;
+            }
+            100% {
+                transform: translate(0, -100px) scale(2);
+                opacity: 0;
+            }
         }
     </style>
 </head>
@@ -93,18 +144,51 @@
             "blue+red": "magenta",
             "green+blue": "cyan",
             "blue+green": "cyan",
+            "yellow+blue": "white",
+            "blue+yellow": "white",
+            "magenta+green": "white",
+            "green+magenta": "white",
+            "cyan+red": "white",
+            "red+cyan": "white"
         };
-        let grid = Array(5).fill().map(() => Array(5).fill(null));
+        let grid = [];
+        let gridRows = 0;
+        let gridCols = 0;
         let score = 0;
+        let isAnimating = false;
+        let lastColors = [];
+        const MAX_SAME_COLOR = 4;
 
         function randomColor() {
-            return colors[Math.floor(Math.random() * colors.length)];
+            let colorCounts = {};
+            lastColors.forEach(color => {
+                colorCounts[color] = (colorCounts[color] || 0) + 1;
+            });
+
+            let availableColors = colors.filter(color => 
+                !colorCounts[color] || colorCounts[color] < MAX_SAME_COLOR
+            );
+
+            if (availableColors.length === 0) {
+                lastColors.shift();
+                return randomColor();
+            }
+
+            const newColor = availableColors[Math.floor(Math.random() * availableColors.length)];
+            
+            lastColors.push(newColor);
+            
+            if (lastColors.length > 8) {
+                lastColors.shift();
+            }
+
+            return newColor;
         }
 
         function spawnTile() {
             let emptyTiles = [];
-            for (let r = 0; r < 5; r++) {
-                for (let c = 0; c < 5; c++) {
+            for (let r = 0; r < gridRows; r++) {
+                for (let c = 0; c < gridCols; c++) {
                     if (!grid[r][c]) emptyTiles.push([r, c]);
                 }
             }
@@ -117,8 +201,8 @@
         function drawGrid() {
             const container = document.getElementById("game-container");
             container.innerHTML = "";
-            for (let r = 0; r < 5; r++) {
-                for (let c = 0; c < 5; c++) {
+            for (let r = 0; r < gridRows; r++) {
+                for (let c = 0; c < gridCols; c++) {
                     const tile = document.createElement("div");
                     tile.classList.add("tile");
                     if (grid[r][c]) {
@@ -132,63 +216,99 @@
             }
         }
 
-        function merge(row) {
+        function merge(row, rowIndex = null, isReversed = false) {
             let newRow = row.filter(tile => tile !== null);
+            let merged = false;
+            
             for (let i = 0; i < newRow.length - 1; i++) {
+                if (merged) break;
+                
                 const pair = `${newRow[i]}+${newRow[i+1]}`;
                 if (mixColors[pair]) {
-                    newRow[i] = mixColors[pair];
-                    newRow[i+1] = null;
-                    if (newRow[i] === "white") {
-                        handleWhiteTile(i, row.indexOf(newRow[i]));
-                        newRow[i] = null;
+                    const mergedColor = mixColors[pair];
+                    newRow[i] = null;
+                    newRow[i+1] = mergedColor;
+                    
+                    if (mergedColor === "white") {
+                        let actualRow, actualCol;
+                        
+                        if (rowIndex !== null) {
+                            actualRow = rowIndex;
+                            actualCol = isReversed ? 
+                                gridCols - (i + 2) :
+                                i + 1;
+                        } else {
+                            actualRow = isReversed ? 
+                                gridRows - (i + 2) :
+                                i + 1;
+                            actualCol = row.indexOf(mergedColor);
+                        }
+                        
+                        console.log("RGB Bulundu:", actualRow, actualCol);
+                        
+                        drawGrid();
+                        requestAnimationFrame(() => {
+                            handleWhiteTile(actualRow, actualCol);
+                        });
+                        newRow[i+1] = null;
                     }
+                    merged = true;
                 }
             }
-            return newRow.filter(tile => tile !== null).concat(Array(5 - newRow.length).fill(null));
+            
+            return newRow.filter(tile => tile !== null)
+                        .concat(Array(row.length - newRow.filter(tile => tile !== null).length).fill(null));
         }
 
         function moveLeft() {
+            if (isAnimating) return false;
             let moved = false;
-            for (let r = 0; r < 5; r++) {
+            for (let r = 0; r < gridRows; r++) {
                 let original = [...grid[r]];
-                grid[r] = merge(grid[r]);
+                grid[r] = merge(grid[r], r, false);
                 if (original.toString() !== grid[r].toString()) moved = true;
             }
             return moved;
         }
 
         function moveRight() {
+            if (isAnimating) return false;
             let moved = false;
-            for (let r = 0; r < 5; r++) {
+            for (let r = 0; r < gridRows; r++) {
                 let original = [...grid[r]];
-                grid[r] = merge(grid[r].reverse()).reverse();
+                let reversed = grid[r].reverse();
+                reversed = merge(reversed, r, true);
+                grid[r] = reversed.reverse();
                 if (original.toString() !== grid[r].toString()) moved = true;
             }
             return moved;
         }
 
         function moveUp() {
+            if (isAnimating) return false;
             let moved = false;
-            for (let c = 0; c < 5; c++) {
+            for (let c = 0; c < gridCols; c++) {
                 let column = [];
-                for (let r = 0; r < 5; r++) column.push(grid[r][c]);
+                for (let r = 0; r < gridRows; r++) column.push(grid[r][c]);
                 let original = [...column];
-                column = merge(column);
-                for (let r = 0; r < 5; r++) grid[r][c] = column[r];
+                column = merge(column, null, false);
+                for (let r = 0; r < gridRows; r++) grid[r][c] = column[r];
                 if (original.toString() !== column.toString()) moved = true;
             }
             return moved;
         }
 
         function moveDown() {
+            if (isAnimating) return false;
             let moved = false;
-            for (let c = 0; c < 5; c++) {
+            for (let c = 0; c < gridCols; c++) {
                 let column = [];
-                for (let r = 0; r < 5; r++) column.push(grid[r][c]);
+                for (let r = 0; r < gridRows; r++) column.push(grid[r][c]);
                 let original = [...column];
-                column = merge(column.reverse()).reverse();
-                for (let r = 0; r < 5; r++) grid[r][c] = column[r];
+                let reversed = column.reverse();
+                reversed = merge(reversed, null, true);
+                column = reversed.reverse();
+                for (let r = 0; r < gridRows; r++) grid[r][c] = column[r];
                 if (original.toString() !== column.toString()) moved = true;
             }
             return moved;
@@ -197,11 +317,13 @@
         let startX, startY, endX, endY;
 
         function handleTouchStart(e) {
+            if (isAnimating) return;
             startX = e.touches[0].clientX;
             startY = e.touches[0].clientY;
         }
 
         function handleTouchEnd(e) {
+            if (isAnimating) return;
             endX = e.changedTouches[0].clientX;
             endY = e.changedTouches[0].clientY;
             handleSwipe();
@@ -225,33 +347,45 @@
                 }
             }
         }
-function handleWhiteTile(row, col) {
-    const container = document.getElementById("game-container");
-    const confetti = document.createElement("div");
-    confetti.classList.add("confetti");
-    confetti.style.top = `${row * 60}px`;
-    confetti.style.left = `${col * 60}px`;
 
-    const scoreAnimation = document.createElement("div");
-    scoreAnimation.classList.add("score-animation");
-    scoreAnimation.textContent = "+300";
-    scoreAnimation.style.top = `${row * 60}px`;
-    scoreAnimation.style.left = `${col * 60}px`;
+        function handleWhiteTile(row, col) {
+            if (isAnimating) return;
+            isAnimating = true;
 
-    container.appendChild(confetti);
-    container.appendChild(scoreAnimation);
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
 
-    // Puanı hemen ekleyin
-    score += 300;
-    document.getElementById("score-container").textContent = `Score: ${score}`;
-    
-    setTimeout(() => {
-        confetti.remove();
-        scoreAnimation.remove();
-        grid[row][col] = null;  // Tile'ı kaldırın
-        drawGrid();  // Grid'i tekrar çizin
-    }, 1000);  // Animasyon süresi
-}
+            const explosion = document.createElement('div');
+            explosion.className = 'tile explode';
+            explosion.style.position = 'fixed';
+            explosion.style.left = `${centerX - 30}px`;
+            explosion.style.top = `${centerY - 30}px`;
+            explosion.style.backgroundColor = 'white';
+            explosion.textContent = 'RGB';
+            document.body.appendChild(explosion);
+
+            const scoreAnim = document.createElement('div');
+            scoreAnim.className = 'score-animation';
+            scoreAnim.textContent = '+300';
+            scoreAnim.style.left = `${centerX - 20}px`;
+            scoreAnim.style.top = `${centerY - 12}px`;
+            document.body.appendChild(scoreAnim);
+
+            setTimeout(() => {
+                explosion.remove();
+                scoreAnim.remove();
+                score += 300;
+                document.getElementById("score-container").textContent = `Score: ${score}`;
+                
+                grid[row][col] = null;
+                drawGrid();
+                isAnimating = false;
+                
+                spawnTile();
+                drawGrid();
+            }, 1000);
+        }
+
         function handleWhiteTile2(row, col) {
             const container = document.getElementById("game-container");
             const confetti = document.createElement("div");
@@ -279,11 +413,65 @@ function handleWhiteTile(row, col) {
         }
 
         function afterMove() {
-            spawnTile();
-            drawGrid();
+            if (!isAnimating) {
+                spawnTile();
+                drawGrid();
+                
+                if (isGameOver()) {
+                    alert(`Oyun bitti! Final skorunuz: ${score}`);
+                }
+            }
         }
 
+        function isGameOver() {
+            const hasEmptyTile = grid.some(row => row.some(tile => tile === null));
+            if (hasEmptyTile) return false;
+
+            for (let r = 0; r < grid.length; r++) {
+                for (let c = 0; c < grid[0].length; c++) {
+                    const currentTile = grid[r][c];
+                    
+                    if (c < grid[0].length - 1) {
+                        const pair = `${currentTile}+${grid[r][c+1]}`;
+                        if (mixColors[pair]) return false;
+                    }
+                    
+                    if (r < grid.length - 1) {
+                        const pair = `${currentTile}+${grid[r+1][c]}`;
+                        if (mixColors[pair]) return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        function calculateGridSize() {
+            const containerWidth = window.innerWidth * 0.95;
+            const containerHeight = window.innerHeight * 0.8;
+            const cols = Math.max(4, Math.floor(containerWidth / 65));
+            const rows = Math.max(4, Math.floor(containerHeight / 65));
+            console.log(`Grid boyutu: ${rows}x${cols}`);
+            return { rows, cols };
+        }
+
+        function initGrid() {
+            const { rows, cols } = calculateGridSize();
+            gridRows = rows;
+            gridCols = cols;
+            grid = Array(rows).fill().map(() => Array(cols).fill(null));
+            
+            const container = document.getElementById("game-container");
+            container.style.gridTemplateColumns = `repeat(${cols}, 60px)`;
+            container.style.gridTemplateRows = `repeat(${rows}, 60px)`;
+        }
+
+        window.addEventListener('resize', () => {
+            initGrid();
+            drawGrid();
+        });
+
         function initGame() {
+            initGrid();
             spawnTile();
             spawnTile();
             drawGrid();
